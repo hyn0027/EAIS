@@ -8,15 +8,34 @@ import time
 
 
 def ground_truth_lx():
-    x_c, y_c, radius = -1.0, -1.0, 0.5
-    obstacle1 = (
-        jnp.linalg.norm(np.array([0.0, 1.0]) - grid.states[..., :2], axis=-1) - radius
-    )
-    obstacle2 = (
-        jnp.linalg.norm(np.array([x_c, y_c]) - grid.states[..., :2], axis=-1) - radius
-    )
-    failure_lx = jnp.minimum(obstacle1, obstacle2)
-    return failure_lx
+    class Sinoides:
+        def __init__(self) -> None:
+            self.parameters = [np.random.normal(0, 2) for i in range(14)]
+
+        def f(self, x, y, z):
+            return (
+                np.sin(2 * x * self.parameters[0] + self.parameters[1])
+                + np.sin(2 * y * self.parameters[2] + self.parameters[3])
+                + np.sin(2 * z * self.parameters[4] + self.parameters[5])
+                + np.sin(4.0 * x * y * self.parameters[6] + self.parameters[7])
+                + np.sin(4.0 * y * z * self.parameters[8] + self.parameters[9])
+                + np.sin(4.0 * z * x * self.parameters[10] + self.parameters[11])
+                + np.sin(16.0 * x * y * z * self.parameters[12] + self.parameters[13])
+                + 1
+            )
+
+    func = Sinoides()
+
+    lx = np.zeros(num_cells)
+    for i in range(num_cells[0]):
+        for j in range(num_cells[1]):
+            for k in range(num_cells[2]):
+                lx[i, j, k] = func.f(
+                    (i - num_cells[0] / 2) / num_cells[0],
+                    (j - num_cells[1] / 2) / num_cells[1],
+                    (k - num_cells[2] / 2) / num_cells[2],
+                )
+    return lx
 
 
 def GP(points: List[Tuple[int, int, int, float]], noise_level=1e-2):
@@ -24,20 +43,21 @@ def GP(points: List[Tuple[int, int, int, float]], noise_level=1e-2):
     X = X / np.array(num_cells)
     y = np.array([point[3] for point in points], dtype=np.float32)
     time_0 = time.time()
-    kernel = 1.0 * RBF(length_scale=1.0, length_scale_bounds=(1e-2, 1e3)) + WhiteKernel(
-        noise_level=noise_level, noise_level_bounds=(1e-8, 1e6)
+    kernel = 1.0 * RBF(length_scale=1.0, length_scale_bounds=(1e-5, 1e5)) + WhiteKernel(
+        noise_level=noise_level, noise_level_bounds="fixed"
     )
-    gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=4)
+
+    gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=20)
     gp.fit(X, y)
     time_1 = time.time()
-    print(f"Training time: {time_1 - time_0}")
+    # print(f"Training time: {time_1 - time_0}")
 
     # Predict in one go
     preds = gp.predict(grid_np, return_std=False)
 
     # Reshape to 3D grid
     lx = preds.reshape(num_cells)
-    print("time to predict: ", time.time() - time_1)
+    # print("time to predict: ", time.time() - time_1)
     return lx
 
 
