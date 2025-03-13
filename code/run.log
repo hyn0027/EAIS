@@ -1,0 +1,112 @@
+active sampling with noise: 0.01, gp_noise_level: 0.01
+Max difference: 1.2611791815184143
+Min difference: -1.1588496837882205
+Mean difference: -2.1074210551309676e-05
+Std difference: 0.06147874950255315
+number of points used: 301
+Percentage of points used: 0.22691121815892834
+--------------------------------------------------
+active sampling with noise: 0.1, gp_noise_level: 0.1
+Max difference: 1.6260799537123747
+Min difference: -0.9217376582556384
+Mean difference: -0.005743878844334685
+Std difference: 0.1198799286258716
+number of points used: 309
+Percentage of points used: 0.2329420811000294
+--------------------------------------------------
+active sampling with noise: 0.5, gp_noise_level: 0.5
+Max difference: 1.6576102298334314
+Min difference: -1.7748633129880105
+Mean difference: -0.004330517822309753
+Std difference: 0.20002096516436416
+number of points used: 303
+Percentage of points used: 0.22841893389420356
+--------------------------------------------------
+active sampling with noise: 1e-05, gp_noise_level: 1e-05
+Max difference: 1.407788555211123
+Min difference: -0.5842193289099908
+Mean difference: 0.003594398502714444
+Std difference: 0.04887023432167607
+number of points used: 307
+Percentage of points used: 0.23143436536475415
+--------------------------------------------------
+active sampling with noise: 1e-07, gp_noise_level: 1e-07
+Max difference: 1.4371957150906836
+Min difference: -1.2919323797467956
+Mean difference: -0.0011667425097149173
+Std difference: 0.06283790420786514
+number of points used: 305
+Percentage of points used: 0.22992664962947887
+--------------------------------------------------
+active sampling with noise: 1, gp_noise_level: 1
+Max difference: 1.6064747887732604
+Min difference: -1.7853493780507534
+Mean difference: 0.04206468167367349
+Std difference: 0.32860512165674416
+number of points used: 310
+Percentage of points used: 0.23369593896766702
+--------------------------------------------------
+vanilla sample with noise: 1e-07, gp_noise_level: 1e-07
+Total possible points: 132651
+Percetage of points used: 0.2261573602912907
+Max difference: 0.33576688490378714
+Min difference: -0.676787916288752
+Mean difference: 0.00012500517719054883
+Std difference: 0.01904429046910924
+--------------------------------------------------
+vanilla sample with noise: 0.0001, gp_noise_level: 0.0001
+Total possible points: 132651
+Percetage of points used: 0.2261573602912907
+Max difference: 0.3299015759861512
+Min difference: -0.7115876473953291
+Mean difference: -0.0008266511947092055
+Std difference: 0.023216543332811302
+--------------------------------------------------
+vanilla sample with noise: 0.01, gp_noise_level: 0.01
+Total possible points: 132651
+Percetage of points used: 0.2261573602912907
+Max difference: 1.1639581954636764
+Min difference: -0.8925207316354049
+Mean difference: -0.0010162257921737142
+Std difference: 0.062449748854429186
+--------------------------------------------------
+vanilla sample with noise: 0.1, gp_noise_level: 0.1
+Total possible points: 132651
+Percetage of points used: 0.2261573602912907
+Max difference: 1.283056136586512
+Min difference: -1.2859294261106298
+Mean difference: -0.005487090776676067
+Std difference: 0.12109971167387176
+--------------------------------------------------
+vanilla sample with noise: 1, gp_noise_level: 1
+Total possible points: 132651
+Percetage of points used: 0.2261573602912907
+Max difference: 0.9510827118833975
+Min difference: -1.8902648817952667
+Mean difference: -0.02006696185435346
+Std difference: 0.2940070124681829
+--------------------------------------------------
+vanilla sample with noise: 0.5, gp_noise_level: 0.5
+Total possible points: 132651
+Percetage of points used: 0.2261573602912907
+Max difference: 1.8395065013344647
+Min difference: -1.5667707622781024
+Mean difference: 0.003568436328533945
+Std difference: 0.22248431846066702
+--------------------------------------------------
+vanilla sample with noise: 0, gp_noise_level: 0.05
+Total possible points: 132651
+Percetage of points used: 0.2261573602912907
+Max difference: 1.1262810660801286
+Min difference: -0.8116062175629222
+Mean difference: 0.005845094223598294
+Std difference: 0.11106701165033298
+--------------------------------------------------
+vanilla sample with noise: 0.05, gp_noise_level: 1e-07
+Total possible points: 132651
+Percetage of points used: 0.2261573602912907
+Max difference: 0.7763168824650237
+Min difference: -0.839816837663875
+Mean difference: -0.007974393253156629
+Std difference: 0.04680135216929168
+--------------------------------------------------
