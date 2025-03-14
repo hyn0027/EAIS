@@ -44,7 +44,7 @@ def GP(points: List[Tuple[int, int, int, float]], noise_level=1e-2):
     y = np.array([point[3] for point in points], dtype=np.float32)
     time_0 = time.time()
     kernel = 1.0 * RBF(length_scale=1.0, length_scale_bounds=(1e-5, 1e5)) + WhiteKernel(
-        noise_level=noise_level, noise_level_bounds="fixed"
+        noise_level=noise_level * noise_level, noise_level_bounds="fixed"
     )
 
     gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=20)
@@ -75,7 +75,5 @@ def get_random_points(
     known_points = []
     for _ in range(num_points):
         x, y, z = random_point_location()
-        known_points.append(
-            (x, y, z, golden_lx[x, y, z] + np.random.normal(0, noise * noise))
-        )
+        known_points.append((x, y, z, golden_lx[x, y, z] + np.random.normal(0, noise)))
     return known_points

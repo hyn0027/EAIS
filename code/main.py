@@ -1,17 +1,33 @@
 import os
+import numpy as np
 import matplotlib.pyplot as plt
-import hj_reachability as hj
-from dubins import dyn_sys
-from config import grid
 from config import num_cells
 from safety_boundaries import ground_truth_lx, get_random_points, GP
-import numpy as np
 
 
-def solve(failure_lx, path: str):
+def ensure_dir(path: str) -> None:
+    """Ensure that a directory exists."""
+    os.makedirs(path, exist_ok=True)
+
+
+def plot_slice(
+    data: np.ndarray, title: str, filename: str, slice_idx: int, threshold: bool = False
+) -> None:
+    """Helper to plot and save a slice of data."""
+    plt.clf()
+    plt.title(title)
+    slice_data = data[:, :, slice_idx].T > 0 if threshold else data[:, :, slice_idx].T
+    plt.imshow(slice_data, origin="lower")
+    plt.colorbar()
+    plt.savefig(filename)
+
+
+def solve(failure_lx: np.ndarray, path: str) -> None:
+    """Visualize slices of the failure level set."""
     # solver_settings = hj.SolverSettings.with_accuracy(
     #     "very_high", hamiltonian_postprocessor=hj.solver.backwards_reachable_tube
     # )
+
     # # Time
     # time = 0.0
     # target_time = -2.8
@@ -21,150 +37,108 @@ def solve(failure_lx, path: str):
     #     solver_settings, dyn_sys, grid, time, failure_lx, target_time
     # )
 
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-    plt.clf()
-    plt.title("Failure Set (0th slice)")
-    plt.imshow(failure_lx[:, :, 0].T > 0, origin="lower")
-    plt.colorbar()
-    plt.savefig(os.path.join(path, "failure_set0.png"))
-
-    plt.clf()
-    plt.title("falure lx value (0th slice)")
-    plt.imshow(failure_lx[:, :, 0].T, origin="lower")
-    plt.colorbar()
-    plt.savefig(os.path.join(path, "failure_lx0.png"))
-
-    plt.clf()
-    plt.title("Failure Set (25th slice)")
-    plt.imshow(failure_lx[:, :, 25].T > 0, origin="lower")
-    plt.colorbar()
-    plt.savefig(os.path.join(path, "failure_set25.png"))
-
-    plt.clf()
-    plt.title("falure lx value (25th slice)")
-    plt.imshow(failure_lx[:, :, 25].T, origin="lower")
-    plt.colorbar()
-    plt.savefig(os.path.join(path, "failure_lx25.png"))
+    ensure_dir(path)
+    for slice_idx in [0, 25]:
+        plot_slice(
+            failure_lx,
+            f"Failure Set ({slice_idx}th slice)",
+            os.path.join(path, f"failure_set{slice_idx}.png"),
+            slice_idx,
+            True,
+        )
+        plot_slice(
+            failure_lx,
+            f"Failure lx value ({slice_idx}th slice)",
+            os.path.join(path, f"failure_lx{slice_idx}.png"),
+            slice_idx,
+        )
 
 
-def eval_difference(golden_lx, sim_lx, path="difference"):
-    if not os.path.exists(path):
-        os.makedirs(path)
+def eval_difference(
+    golden_lx: np.ndarray, sim_lx: np.ndarray, path: str = "difference"
+) -> np.ndarray:
+    """Evaluate and visualize difference between golden and simulated lx."""
+    ensure_dir(path)
     diff = golden_lx - sim_lx
-    print(f"Max difference: {diff.max()}")
-    print(f"Min difference: {diff.min()}")
-    print(f"Mean difference: {diff.mean()}")
-    print(f"Std difference: {diff.std()}")
-    plt.clf()
-    plt.title("Difference (25th slice)")
-    plt.imshow(diff[:, :, 25].T, origin="lower")
-    plt.colorbar()
-    plt.savefig(os.path.join(path, "difference25.png"))
-    plt.clf()
-    plt.title("Difference (0th slice)")
-    plt.imshow(diff[:, :, 0].T, origin="lower")
-    plt.colorbar()
-    plt.savefig(os.path.join(path, "difference0.png"))
+    print(
+        f"[Difference] Max: {diff.max()}, Min: {diff.min()}, Mean: {diff.mean()}, Std: {diff.std()}"
+    )
+    for slice_idx in [0, 25]:
+        plot_slice(
+            diff,
+            f"Difference ({slice_idx}th slice)",
+            os.path.join(path, f"difference{slice_idx}.png"),
+            slice_idx,
+        )
+    return diff
 
 
 def vanilla_sample(
-    golden_lx, noise=0.0, gp_noise_level=1e-2, path="vanilla_sample", total_points=200
-):
+    golden_lx: np.ndarray,
+    noise: float = 0.0,
+    gp_noise_level: float = 1e-2,
+    path: str = "vanilla_sample",
+    total_points: int = 200,
+) -> np.ndarray:
+    """Perform vanilla (random) sampling and evaluate."""
     sim_lx = GP(get_random_points(total_points, golden_lx, noise), gp_noise_level)
     solve(sim_lx, path)
-    total_possible_points = num_cells[0] * num_cells[1] * num_cells[2]
-    print(f"vanilla sample with noise: {noise}, gp_noise_level: {gp_noise_level}")
-    print(f"Total possible points: {total_possible_points}")
-    print(f"Percetage of points used: {total_points/total_possible_points * 100}")
-    eval_difference(golden_lx, sim_lx, path)
-    print("-" * 50)
+    total_possible_points = np.prod(num_cells)
+    print(f"[Vanilla Sample] Noise: {noise}, GP Noise Level: {gp_noise_level}")
+    return eval_difference(golden_lx, sim_lx, path)
 
 
 def active_sampling(
-    golden_lx,
-    noise=0.0,
-    gp_noise_level=1e-2,
-    path="active_sampling",
-    random_prob=0.5,
-    total_points=200,
-):
+    golden_lx: np.ndarray,
+    noise: float = 0.0,
+    gp_noise_level: float = 1e-2,
+    path: str = "active_sampling",
+    random_prob: float = 0.5,
+    total_points: int = 200,
+) -> np.ndarray:
+    """Perform active sampling based on discrepancy."""
+
     def find_most_discrepant_point(sim_lx, known_points):
-        max_diff = 0
-        max_point = None
-        for point in known_points:
-            x, y, z = point[:3]
-            diff = abs(sim_lx[x, y, z] - point[3])
-            if diff > max_diff:
-                max_diff = diff
-                max_point = point
-        return max_point
+        diffs = [abs(sim_lx[x, y, z] - v) for x, y, z, v in known_points]
+        return known_points[np.argmax(diffs)]
 
     def add_new_points(sim_lx, known_points):
         if np.random.rand() < random_prob:
             return get_random_points(12, golden_lx, noise)
-        else:
-            center = find_most_discrepant_point(sim_lx, known_points)
-            res = []
-            for delta in [-10, -5, 5, 10]:
-                x, y, z = center[:3]
-                x += delta
-                if x < 0 or x >= num_cells[0]:
-                    continue
+        center = find_most_discrepant_point(sim_lx, known_points)
+        x, y, z = center[:3]
+        deltas = [-10, -5, 5, 10]
+        res = []
+        for dx, dy, dz in (
+            [(d, 0, 0) for d in deltas]
+            + [(0, d, 0) for d in deltas]
+            + [(0, 0, d) for d in deltas]
+        ):
+            nx, ny, nz = x + dx, y + dy, z + dz
+            if (
+                0 <= nx < num_cells[0]
+                and 0 <= ny < num_cells[1]
+                and 0 <= nz < num_cells[2]
+            ):
                 res.append(
-                    (
-                        x,
-                        y,
-                        z,
-                        golden_lx[x, y, z] + np.random.normal(0, noise * noise),
-                    )
+                    (nx, ny, nz, golden_lx[nx, ny, nz] + np.random.normal(0, noise**2))
                 )
-            for delta in [-10, -5, 5, 10]:
-                x, y, z = center[:3]
-                y += delta
-                if y < 0 or y >= num_cells[1]:
-                    continue
-                res.append(
-                    (
-                        x,
-                        y,
-                        z,
-                        golden_lx[x, y, z] + np.random.normal(0, noise * noise),
-                    )
-                )
-            for delta in [-10, -5, 5, 10]:
-                x, y, z = center[:3]
-                z += delta
-                if z < 0 or z >= num_cells[2]:
-                    continue
-                res.append(
-                    (
-                        x,
-                        y,
-                        z,
-                        golden_lx[x, y, z] + np.random.normal(0, noise * noise),
-                    )
-                )
-            return res
+        return res
 
     known_points = get_random_points(80, golden_lx, noise)
     sim_lx = GP(known_points, gp_noise_level)
     while len(known_points) < total_points:
         known_points.extend(add_new_points(sim_lx, known_points))
         sim_lx = GP(known_points, gp_noise_level)
-    print(f"active sampling with noise: {noise}, gp_noise_level: {gp_noise_level}")
-    eval_difference(golden_lx, sim_lx, path)
-    print(f"number of points used: {len(known_points)}")
-    print(
-        f"Percentage of points used: {len(known_points)/(num_cells[0] * num_cells[1] * num_cells[2]) * 100}"
-    )
+
+    known_points = known_points[:total_points]
+    sim_lx = GP(known_points, gp_noise_level)
+
+    print(f"[Active Sampling] Noise: {noise}, GP Noise Level: {gp_noise_level}")
     solve(sim_lx, path)
 
-    # plot the distribution of the points
-    x = [point[0] for point in known_points]
-    y = [point[1] for point in known_points]
-    z = [point[2] for point in known_points]
+    # 3D scatter plot of sampled points
+    x, y, z = zip(*[p[:3] for p in known_points])
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
     ax.scatter(x, y, z)
@@ -172,117 +146,37 @@ def active_sampling(
     ax.set_ylabel("Y")
     ax.set_zlabel("Z")
     plt.savefig(os.path.join(path, "point_distribution.png"))
-    print("-" * 50)
+
+    return eval_difference(golden_lx, sim_lx, path)
+
+
+def simulate() -> None:
+    """Run all simulations with various parameters."""
+    golden_lx = ground_truth_lx()
+    solve(golden_lx, "golden")
+
+    params = [
+        (1e-2, 1e-2),
+        (1e-1, 1e-1),
+        (5e-1, 5e-1),
+        (1e-5, 1e-5),
+        (1e-7, 1e-7),
+        (1, 1),
+        (0, 5e-2),
+        (5e-2, 1e-7),
+    ]
+
+    for noise, gp_noise in params:
+        active_sampling(
+            golden_lx, noise, gp_noise, f"active_sampling_{noise}_{gp_noise}", 0.5, 300
+        )
+        vanilla_sample(
+            golden_lx, noise, gp_noise, f"vanilla_sample_{noise}_{gp_noise}", 300
+        )
 
 
 def main():
-    golden_lx = ground_truth_lx()
-    solve(golden_lx, "golden")
-    active_sampling(
-        golden_lx,
-        noise=1e-2,
-        gp_noise_level=1e-2,
-        path="active_sampling_1e-2_1e-2",
-        random_prob=0.5,
-        total_points=300,
-    )
-    active_sampling(
-        golden_lx,
-        noise=1e-1,
-        gp_noise_level=1e-1,
-        path="active_sampling_1e-1_1e-1",
-        random_prob=0.5,
-        total_points=300,
-    )
-    active_sampling(
-        golden_lx,
-        noise=5e-1,
-        gp_noise_level=5e-1,
-        path="active_sampling_5e-1_5e-1",
-        random_prob=0.5,
-        total_points=300,
-    )
-    active_sampling(
-        golden_lx,
-        noise=1e-5,
-        gp_noise_level=1e-5,
-        path="active_sampling_1e-5_1e-5",
-        random_prob=0.5,
-        total_points=300,
-    )
-    active_sampling(
-        golden_lx,
-        noise=1e-7,
-        gp_noise_level=1e-7,
-        path="active_sampling_1e-7_1e-7",
-        random_prob=0.5,
-        total_points=300,
-    )
-    active_sampling(
-        golden_lx,
-        noise=1,
-        gp_noise_level=1,
-        path="active_sampling_1_1",
-        random_prob=0.5,
-        total_points=300,
-    )
-    vanilla_sample(
-        golden_lx,
-        noise=1e-7,
-        gp_noise_level=1e-7,
-        path="vanilla_sample_1e-7_1e-7",
-        total_points=300,
-    )
-    vanilla_sample(
-        golden_lx,
-        noise=1e-4,
-        gp_noise_level=1e-4,
-        path="vanilla_sample_1e-4_1e-4",
-        total_points=300,
-    )
-    vanilla_sample(
-        golden_lx,
-        noise=1e-2,
-        gp_noise_level=1e-2,
-        path="vanilla_sample_1e-2_1e-2",
-        total_points=300,
-    )
-    vanilla_sample(
-        golden_lx,
-        noise=1e-1,
-        gp_noise_level=1e-1,
-        path="vanilla_sample_1e-1_1e-1",
-        total_points=300,
-    )
-    vanilla_sample(
-        golden_lx,
-        noise=1,
-        gp_noise_level=1,
-        path="vanilla_sample_1_1",
-        total_points=300,
-    )
-
-    vanilla_sample(
-        golden_lx,
-        noise=5e-1,
-        gp_noise_level=5e-1,
-        path="vanilla_sample_5e-1_5e-1",
-        total_points=300,
-    )
-    vanilla_sample(
-        golden_lx,
-        noise=0,
-        gp_noise_level=5e-2,
-        path="vanilla_sample_0_5e-2",
-        total_points=300,
-    )
-    vanilla_sample(
-        golden_lx,
-        noise=5e-2,
-        gp_noise_level=1e-7,
-        path="vanilla_sample_5e-2_1e-7",
-        total_points=300,
-    )
+    simulate()
 
 
 if __name__ == "__main__":

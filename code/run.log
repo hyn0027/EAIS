@@ -1,112 +1,32 @@
-active sampling with noise: 0.01, gp_noise_level: 0.01
-Max difference: 1.2611791815184143
-Min difference: -1.1588496837882205
-Mean difference: -2.1074210551309676e-05
-Std difference: 0.06147874950255315
-number of points used: 301
-Percentage of points used: 0.22691121815892834
---------------------------------------------------
-active sampling with noise: 0.1, gp_noise_level: 0.1
-Max difference: 1.6260799537123747
-Min difference: -0.9217376582556384
-Mean difference: -0.005743878844334685
-Std difference: 0.1198799286258716
-number of points used: 309
-Percentage of points used: 0.2329420811000294
---------------------------------------------------
-active sampling with noise: 0.5, gp_noise_level: 0.5
-Max difference: 1.6576102298334314
-Min difference: -1.7748633129880105
-Mean difference: -0.004330517822309753
-Std difference: 0.20002096516436416
-number of points used: 303
-Percentage of points used: 0.22841893389420356
---------------------------------------------------
-active sampling with noise: 1e-05, gp_noise_level: 1e-05
-Max difference: 1.407788555211123
-Min difference: -0.5842193289099908
-Mean difference: 0.003594398502714444
-Std difference: 0.04887023432167607
-number of points used: 307
-Percentage of points used: 0.23143436536475415
---------------------------------------------------
-active sampling with noise: 1e-07, gp_noise_level: 1e-07
-Max difference: 1.4371957150906836
-Min difference: -1.2919323797467956
-Mean difference: -0.0011667425097149173
-Std difference: 0.06283790420786514
-number of points used: 305
-Percentage of points used: 0.22992664962947887
---------------------------------------------------
-active sampling with noise: 1, gp_noise_level: 1
-Max difference: 1.6064747887732604
-Min difference: -1.7853493780507534
-Mean difference: 0.04206468167367349
-Std difference: 0.32860512165674416
-number of points used: 310
-Percentage of points used: 0.23369593896766702
---------------------------------------------------
-vanilla sample with noise: 1e-07, gp_noise_level: 1e-07
-Total possible points: 132651
-Percetage of points used: 0.2261573602912907
-Max difference: 0.33576688490378714
-Min difference: -0.676787916288752
-Mean difference: 0.00012500517719054883
-Std difference: 0.01904429046910924
---------------------------------------------------
-vanilla sample with noise: 0.0001, gp_noise_level: 0.0001
-Total possible points: 132651
-Percetage of points used: 0.2261573602912907
-Max difference: 0.3299015759861512
-Min difference: -0.7115876473953291
-Mean difference: -0.0008266511947092055
-Std difference: 0.023216543332811302
---------------------------------------------------
-vanilla sample with noise: 0.01, gp_noise_level: 0.01
-Total possible points: 132651
-Percetage of points used: 0.2261573602912907
-Max difference: 1.1639581954636764
-Min difference: -0.8925207316354049
-Mean difference: -0.0010162257921737142
-Std difference: 0.062449748854429186
---------------------------------------------------
-vanilla sample with noise: 0.1, gp_noise_level: 0.1
-Total possible points: 132651
-Percetage of points used: 0.2261573602912907
-Max difference: 1.283056136586512
-Min difference: -1.2859294261106298
-Mean difference: -0.005487090776676067
-Std difference: 0.12109971167387176
---------------------------------------------------
-vanilla sample with noise: 1, gp_noise_level: 1
-Total possible points: 132651
-Percetage of points used: 0.2261573602912907
-Max difference: 0.9510827118833975
-Min difference: -1.8902648817952667
-Mean difference: -0.02006696185435346
-Std difference: 0.2940070124681829
---------------------------------------------------
-vanilla sample with noise: 0.5, gp_noise_level: 0.5
-Total possible points: 132651
-Percetage of points used: 0.2261573602912907
-Max difference: 1.8395065013344647
-Min difference: -1.5667707622781024
-Mean difference: 0.003568436328533945
-Std difference: 0.22248431846066702
---------------------------------------------------
-vanilla sample with noise: 0, gp_noise_level: 0.05
-Total possible points: 132651
-Percetage of points used: 0.2261573602912907
-Max difference: 1.1262810660801286
-Min difference: -0.8116062175629222
-Mean difference: 0.005845094223598294
-Std difference: 0.11106701165033298
---------------------------------------------------
-vanilla sample with noise: 0.05, gp_noise_level: 1e-07
-Total possible points: 132651
-Percetage of points used: 0.2261573602912907
-Max difference: 0.7763168824650237
-Min difference: -0.839816837663875
-Mean difference: -0.007974393253156629
-Std difference: 0.04680135216929168
---------------------------------------------------
+[Active Sampling] Noise: 0.01, GP Noise Level: 0.01
+[Difference] Max: 1.964222112955964, Min: -2.3147015768406143, Mean: -0.0035077188207685035, Std: 0.19805393095290003
+[Vanilla Sample] Noise: 0.01, GP Noise Level: 0.01
+[Difference] Max: 2.340875309798881, Min: -2.668882653498558, Mean: -0.0014361364283048896, Std: 0.18816387827838954
+[Active Sampling] Noise: 0.1, GP Noise Level: 0.1
+[Difference] Max: 2.4055838016028925, Min: -2.0485534718515157, Mean: -0.015173643296479139, Std: 0.2527412764452466
+[Vanilla Sample] Noise: 0.1, GP Noise Level: 0.1
+[Difference] Max: 2.7957741535530345, Min: -3.3620884915526226, Mean: -0.0032820559151597256, Std: 0.1897350660151028
+[Active Sampling] Noise: 0.5, GP Noise Level: 0.5
+[Difference] Max: 2.0655438051270214, Min: -2.7417072886744687, Mean: -0.04310846403961059, Std: 0.41169866848506076
+[Vanilla Sample] Noise: 0.5, GP Noise Level: 0.5
+[Difference] Max: 2.3149334997482742, Min: -1.9992196118137422, Mean: 0.0027424266547752037, Std: 0.3118359691341433
+[Active Sampling] Noise: 1e-05, GP Noise Level: 1e-05
+[Difference] Max: 2.586385304346808, Min: -3.019311321400085, Mean: 0.015319285835351708, Std: 0.14954801585089428
+[Vanilla Sample] Noise: 1e-05, GP Noise Level: 1e-05
+[Difference] Max: 2.8432760486616977, Min: -2.4526777711867527, Mean: -0.01242063526425627, Std: 0.16210769575401
+[Active Sampling] Noise: 1e-07, GP Noise Level: 1e-07
+[Difference] Max: 1.9260456942306583, Min: -2.2592626998356815, Mean: 0.020941724336824865, Std: 0.1873092837700419
+[Vanilla Sample] Noise: 1e-07, GP Noise Level: 1e-07
+[Difference] Max: 3.4236176192491476, Min: -3.406328112269624, Mean: -0.010079431896833793, Std: 0.13771600008618326
+[Active Sampling] Noise: 1, GP Noise Level: 1
+[Difference] Max: 2.4111297010203137, Min: -2.4030842937580763, Mean: -0.017117705472554888, Std: 0.4596734408160475
+[Vanilla Sample] Noise: 1, GP Noise Level: 1
+[Difference] Max: 2.5519120191271094, Min: -2.2528047685807326, Mean: 0.006326913296298934, Std: 0.4330521254353001
+[Active Sampling] Noise: 0, GP Noise Level: 0.05
+[Difference] Max: 1.8781688733950737, Min: -2.62957290408749, Mean: -0.009561987220600749, Std: 0.2133853346327467
+[Vanilla Sample] Noise: 0, GP Noise Level: 0.05
+[Difference] Max: 1.8273361889207227, Min: -3.300527690265784, Mean: -0.0030763730273014344, Std: 0.18836609612948677
+[Active Sampling] Noise: 0.05, GP Noise Level: 1e-07
+[Difference] Max: 3.87978800395687, Min: -3.6592556820428914, Mean: -0.24353037137678787, Std: 1.0474466092252994
+[Vanilla Sample] Noise: 0.05, GP Noise Level: 1e-07
+[Difference] Max: 2.7601441749751237, Min: -1.726731858036033, Mean: 0.0004923104912013665, Std: 0.25351891994210735
