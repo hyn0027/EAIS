@@ -156,27 +156,51 @@ def simulate() -> None:
     solve(golden_lx, "golden")
 
     params = [
+        (1e-7, 1e-7),
+        (1e-6, 1e-6),
+        (1e-5, 1e-5),
+        (1e-4, 1e-4),
+        (1e-3, 1e-3),
         (1e-2, 1e-2),
         (1e-1, 1e-1),
         (5e-1, 5e-1),
-        (1e-5, 1e-5),
-        (1e-7, 1e-7),
         (1, 1),
         (0, 5e-2),
         (5e-2, 1e-7),
     ]
 
+    diff_dict = {}
+
     for noise, gp_noise in params:
-        active_sampling(
+        diff_active = active_sampling(
             golden_lx, noise, gp_noise, f"active_sampling_{noise}_{gp_noise}", 0.5, 300
         )
-        vanilla_sample(
+        diff_vanilla = vanilla_sample(
             golden_lx, noise, gp_noise, f"vanilla_sample_{noise}_{gp_noise}", 300
         )
+        diff_dict[f"active_{noise}_{gp_noise}"] = diff_active
+        diff_dict[f"vanilla_{noise}_{gp_noise}"] = diff_vanilla
+
+    return diff_dict
 
 
 def main():
-    simulate()
+    """Main function to run simulations."""
+    diff = None
+    for _ in range(20):
+        print(f"Simulation Pass{_}")
+        simulate()
+        if diff is None:
+            diff = simulate()
+        else:
+            diff_tmp = simulate()
+            for key in diff.keys():
+                diff[key] = np.concatenate((diff[key], diff_tmp[key]), axis=0)
+
+    for key in diff.keys():
+        print(
+            f"[{key}] Max: {diff[key].max()}, Min: {diff[key].min()}, Mean: {diff[key].mean()}, Std: {diff[key].std()}"
+        )
 
 
 if __name__ == "__main__":

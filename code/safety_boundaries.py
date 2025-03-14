@@ -1,79 +1,87 @@
-import jax.numpy as jnp
-from config import grid, num_cells, grid_np
-from typing import Tuple, List
 import numpy as np
+from typing import Tuple, List
+from config import num_cells, grid_np
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 import time
 
 
-def ground_truth_lx():
-    class Sinoides:
-        def __init__(self) -> None:
-            self.parameters = [np.random.normal(0, 2) for i in range(14)]
+class Sinoides:
+    def __init__(self) -> None:
+        # Initialize parameters using a single call to np.random.normal
+        self.parameters = np.random.normal(0, 2, 14)
 
-        def f(self, x, y, z):
-            return (
-                np.sin(2 * x * self.parameters[0] + self.parameters[1])
-                + np.sin(2 * y * self.parameters[2] + self.parameters[3])
-                + np.sin(2 * z * self.parameters[4] + self.parameters[5])
-                + np.sin(4.0 * x * y * self.parameters[6] + self.parameters[7])
-                + np.sin(4.0 * y * z * self.parameters[8] + self.parameters[9])
-                + np.sin(4.0 * z * x * self.parameters[10] + self.parameters[11])
-                + np.sin(16.0 * x * y * z * self.parameters[12] + self.parameters[13])
-                + 1
-            )
+    def f(self, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
+        p = self.parameters  # For convenience
+        return (
+            np.sin(2 * x * p[0] + p[1])
+            + np.sin(2 * y * p[2] + p[3])
+            + np.sin(2 * z * p[4] + p[5])
+            + np.sin(4.0 * x * y * p[6] + p[7])
+            + np.sin(4.0 * y * z * p[8] + p[9])
+            + np.sin(4.0 * z * x * p[10] + p[11])
+            + np.sin(16.0 * x * y * z * p[12] + p[13])
+            + 1
+        )
 
+
+def ground_truth_lx() -> np.ndarray:
+    """Generate ground truth using Sinoides function over the grid."""
     func = Sinoides()
 
-    lx = np.zeros(num_cells)
-    for i in range(num_cells[0]):
-        for j in range(num_cells[1]):
-            for k in range(num_cells[2]):
-                lx[i, j, k] = func.f(
-                    (i - num_cells[0] / 2) / num_cells[0],
-                    (j - num_cells[1] / 2) / num_cells[1],
-                    (k - num_cells[2] / 2) / num_cells[2],
-                )
+    # Normalized coordinate arrays
+    x = (np.arange(num_cells[0]) - num_cells[0] / 2) / num_cells[0]
+    y = (np.arange(num_cells[1]) - num_cells[1] / 2) / num_cells[1]
+    z = (np.arange(num_cells[2]) - num_cells[2] / 2) / num_cells[2]
+
+    # Create meshgrid
+    X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+
+    # Vectorized evaluation of the function
+    lx = func.f(X, Y, Z)
     return lx
 
 
-def GP(points: List[Tuple[int, int, int, float]], noise_level=1e-2):
-    X = np.array([list(point[:3]) for point in points], dtype=np.float32)
-    X = X / np.array(num_cells)
+def GP(
+    points: List[Tuple[int, int, int, float]], noise_level: float = 1e-2
+) -> np.ndarray:
+    """Gaussian Process regression on sparse points and prediction on grid."""
+    X = np.array([point[:3] for point in points], dtype=np.float32) / np.array(
+        num_cells
+    )
     y = np.array([point[3] for point in points], dtype=np.float32)
-    time_0 = time.time()
+
+    # Define kernel with RBF and fixed noise
     kernel = 1.0 * RBF(length_scale=1.0, length_scale_bounds=(1e-5, 1e5)) + WhiteKernel(
-        noise_level=noise_level * noise_level, noise_level_bounds="fixed"
+        noise_level=noise_level**2, noise_level_bounds="fixed"
     )
 
-    gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=20)
+    gp = GaussianProcessRegressor(
+        kernel=kernel, n_restarts_optimizer=10, normalize_y=True
+    )
+
+    start_time = time.time()
     gp.fit(X, y)
-    time_1 = time.time()
-    # print(f"Training time: {time_1 - time_0}")
+    training_time = time.time() - start_time
+    # print(f"GP training completed in {training_time:.2f} seconds.")
 
-    # Predict in one go
+    # Prediction on grid
     preds = gp.predict(grid_np, return_std=False)
-
-    # Reshape to 3D grid
-    lx = preds.reshape(num_cells)
-    # print("time to predict: ", time.time() - time_1)
-    return lx
+    return preds.reshape(num_cells)
 
 
 def random_point_location() -> Tuple[int, int, int]:
-    return (
-        np.random.randint(0, num_cells[0]),
-        np.random.randint(0, num_cells[1]),
-        np.random.randint(0, num_cells[2]),
-    )
+    """Generate a random point in the grid."""
+    return tuple(np.random.randint(0, n) for n in num_cells)
 
 
 def get_random_points(
-    num_points, golden_lx, noise=0.0
+    num_points: int, golden_lx: np.ndarray, noise: float = 0.0
 ) -> List[Tuple[int, int, int, float]]:
-    known_points = []
+    """Sample random points from ground truth with optional noise."""
+    points = []
     for _ in range(num_points):
         x, y, z = random_point_location()
-        known_points.append((x, y, z, golden_lx[x, y, z] + np.random.normal(0, noise)))
-    return known_points
+        value = golden_lx[x, y, z] + np.random.normal(0, noise)
+        points.append((x, y, z, value))
+    return points
