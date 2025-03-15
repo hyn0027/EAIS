@@ -4,12 +4,14 @@ from config import num_cells, grid_np
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 import time
+import scipy.optimize
+import warnings
 
 
 class Sinoides:
     def __init__(self) -> None:
         # Initialize parameters using a single call to np.random.normal
-        self.parameters = np.random.normal(0, 2, 14)
+        self.parameters = np.random.normal(0, 2, 12)
 
     def f(self, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
         p = self.parameters  # For convenience
@@ -20,8 +22,6 @@ class Sinoides:
             + np.sin(4.0 * x * y * p[6] + p[7])
             + np.sin(4.0 * y * z * p[8] + p[9])
             + np.sin(4.0 * z * x * p[10] + p[11])
-            + np.sin(16.0 * x * y * z * p[12] + p[13])
-            + 1
         )
 
 
@@ -43,21 +43,22 @@ def ground_truth_lx() -> np.ndarray:
 
 
 def GP(
-    points: List[Tuple[int, int, int, float]], noise_level: float = 1e-2
+    points: List[Tuple[int, int, int, float]], noise_level: float = 1e-2, restarts: int = 8
 ) -> np.ndarray:
     """Gaussian Process regression on sparse points and prediction on grid."""
-    X = np.array([point[:3] for point in points], dtype=np.float32) / np.array(
-        num_cells
-    )
+    X = (
+        np.array([point[:3] for point in points], dtype=np.float32)
+        - np.array(num_cells, dtype=np.float32) / 2
+    ) / np.array(num_cells) * np.sqrt(12)
     y = np.array([point[3] for point in points], dtype=np.float32)
 
     # Define kernel with RBF and fixed noise
-    kernel = 1.0 * RBF(length_scale=1.0, length_scale_bounds=(1e-5, 1e5)) + WhiteKernel(
+    kernel = 1.0 * RBF(length_scale=1.0, length_scale_bounds=(1e-8, 1e5)) + WhiteKernel(
         noise_level=noise_level**2, noise_level_bounds="fixed"
     )
 
     gp = GaussianProcessRegressor(
-        kernel=kernel, n_restarts_optimizer=10, normalize_y=True
+        kernel=kernel, n_restarts_optimizer=restarts, normalize_y=True
     )
 
     start_time = time.time()

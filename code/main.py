@@ -1,4 +1,5 @@
 import os
+import warnings
 import numpy as np
 import matplotlib.pyplot as plt
 from config import num_cells
@@ -98,38 +99,59 @@ def active_sampling(
 ) -> np.ndarray:
     """Perform active sampling based on discrepancy."""
 
-    def find_most_discrepant_point(sim_lx, known_points):
+    extended_point_idx = []
+
+    def find_k_most_discrepant_point(sim_lx, known_points, k=1):
+        # diffs = [abs(sim_lx[x, y, z] - v) for x, y, z, v in known_points]
+        # idx = np.argmax(diffs)
+        # return known_points[idx], idx
         diffs = [abs(sim_lx[x, y, z] - v) for x, y, z, v in known_points]
-        return known_points[np.argmax(diffs)]
+        idx = np.argsort(diffs)[-k:]
+        return [known_points[i] for i in idx], idx
 
     def add_new_points(sim_lx, known_points):
         if np.random.rand() < random_prob:
-            return get_random_points(12, golden_lx, noise)
-        center = find_most_discrepant_point(sim_lx, known_points)
-        x, y, z = center[:3]
-        deltas = [-10, -5, 5, 10]
+            return get_random_points(120, golden_lx, noise)
+        centers, idxs = find_k_most_discrepant_point(sim_lx, known_points, k=10)
         res = []
-        for dx, dy, dz in (
-            [(d, 0, 0) for d in deltas]
-            + [(0, d, 0) for d in deltas]
-            + [(0, 0, d) for d in deltas]
-        ):
-            nx, ny, nz = x + dx, y + dy, z + dz
-            if (
-                0 <= nx < num_cells[0]
-                and 0 <= ny < num_cells[1]
-                and 0 <= nz < num_cells[2]
+        for center, idx in zip(centers, idxs):
+            if idx in extended_point_idx:
+                res.extend(get_random_points(12, golden_lx, noise))
+            extended_point_idx.append(idx)
+            x, y, z = center[:3]
+            deltas = [-10, -5, 5, 10]
+            for dx, dy, dz in (
+                [(d, 0, 0) for d in deltas]
+                + [(0, d, 0) for d in deltas]
+                + [(0, 0, d) for d in deltas]
             ):
-                res.append(
-                    (nx, ny, nz, golden_lx[nx, ny, nz] + np.random.normal(0, noise**2))
-                )
+                nx, ny, nz = x + dx, y + dy, z + dz
+                if (
+                    0 <= nx < num_cells[0]
+                    and 0 <= ny < num_cells[1]
+                    and 0 <= nz < num_cells[2]
+                ):
+                    res.append(
+                        (
+                            nx,
+                            ny,
+                            nz,
+                            golden_lx[nx, ny, nz] + np.random.normal(0, noise),
+                        )
+                    )
         return res
 
-    known_points = get_random_points(80, golden_lx, noise)
-    sim_lx = GP(known_points, gp_noise_level)
+    known_points = get_random_points(400, golden_lx, noise)
+    # SUPPRESE WARNING
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        sim_lx = GP(known_points, gp_noise_level, restarts=1)
+
     while len(known_points) < total_points:
         known_points.extend(add_new_points(sim_lx, known_points))
-        sim_lx = GP(known_points, gp_noise_level)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            sim_lx = GP(known_points, gp_noise_level, restarts=1)
 
     known_points = known_points[:total_points]
     sim_lx = GP(known_points, gp_noise_level)
@@ -150,10 +172,14 @@ def active_sampling(
     return eval_difference(golden_lx, sim_lx, path)
 
 
-def simulate() -> None:
+def simulate(pass_n) -> None:
     """Run all simulations with various parameters."""
+    if not os.path.exists(f"res/{pass_n}"):
+        os.makedirs(f"res/{pass_n}")
     golden_lx = ground_truth_lx()
-    solve(golden_lx, "golden")
+    solve(golden_lx, f"res/{pass_n}/golden")
+    # save golden_lx
+    np.save(os.path.join(f"res/{pass_n}/golden", "lx.npy"), golden_lx)
 
     params = [
         (1e-7, 1e-7),
@@ -173,13 +199,33 @@ def simulate() -> None:
 
     for noise, gp_noise in params:
         diff_active = active_sampling(
-            golden_lx, noise, gp_noise, f"active_sampling_{noise}_{gp_noise}", 0.5, 300
+            golden_lx,
+            noise,
+            gp_noise,
+            f"res/{pass_n}/active_sampling_{noise}_{gp_noise}",
+            0.5,
+            800,
         )
         diff_vanilla = vanilla_sample(
-            golden_lx, noise, gp_noise, f"vanilla_sample_{noise}_{gp_noise}", 300
+            golden_lx,
+            noise,
+            gp_noise,
+            f"res/{pass_n}/vanilla_sample_{noise}_{gp_noise}",
+            800,
         )
         diff_dict[f"active_{noise}_{gp_noise}"] = diff_active
         diff_dict[f"vanilla_{noise}_{gp_noise}"] = diff_vanilla
+        # save diff to npy
+        np.save(
+            os.path.join(
+                f"res/{pass_n}/active_sampling_{noise}_{gp_noise}", "diff.npy"
+            ),
+            diff_active,
+        )
+        np.save(
+            os.path.join(f"res/{pass_n}/vanilla_sample_{noise}_{gp_noise}", "diff.npy"),
+            diff_vanilla,
+        )
 
     return diff_dict
 
@@ -187,13 +233,12 @@ def simulate() -> None:
 def main():
     """Main function to run simulations."""
     diff = None
-    for _ in range(20):
-        print(f"Simulation Pass{_}")
-        simulate()
+    for i in range(4):
+        print(f"Simulation Pass{i}")
         if diff is None:
-            diff = simulate()
+            diff = simulate(i)
         else:
-            diff_tmp = simulate()
+            diff_tmp = simulate(i)
             for key in diff.keys():
                 diff[key] = np.concatenate((diff[key], diff_tmp[key]), axis=0)
 
