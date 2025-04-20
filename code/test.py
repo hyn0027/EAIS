@@ -1,241 +1,341 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from diffusers import DDPMScheduler
-import logging
-import random
-import imageio
 import numpy as np
-from collections import OrderedDict
-
-import robosuite as suite
-from robosuite.wrappers import GymWrapper
-from robosuite.environments.manipulation.lift import Lift
-import robosuite.macros as macros
-from torchvision import transforms
-
-# ---------------- Logging Setup ----------------
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-logger = logging.getLogger(__name__)
-
-device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-# device = "cpu"
-logger.info(f"Using device: {device}")
+import matplotlib.pyplot as plt
+from torch.utils.data import Dataset, DataLoader
+from diffusers import DDPMScheduler
+from tqdm import tqdm
+import imageio
 
 
-class DiffusionPolicy(nn.Module):
-    def __init__(self, obs_embed_dim=256, action_dim=7):
-        super().__init__()
-        self.obs_encoder = nn.Sequential(
-            nn.Conv2d(3, 32, 3, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, 3, stride=2),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(64 * 15 * 15, obs_embed_dim),
-            nn.ReLU(),
-        )
-
-        self.mlp = nn.Sequential(
-            nn.Linear(obs_embed_dim + action_dim + 1, 256),
-            nn.ReLU(),
-            nn.Linear(256, action_dim),
-        )
-
-    def forward(self, noisy_action, obs_image, t):
-        obs_embed = self.obs_encoder(obs_image)
-        t = t.float().unsqueeze(1) / 10.0
-        x = torch.cat([noisy_action, obs_embed, t], dim=1)
-        return self.mlp(x)
-
-
-class MyLift(Lift):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def reset(self, **kwargs):
-        res = super().reset(**kwargs)
-        self.prev_dist = self._gripper_to_target(
-            gripper=self.robots[0].gripper,
-            target=self.cube.root_body,
-            target_type="body",
-            return_distance=True,
-        )
-        return res
-
-    def reward(self, action=None):
-        reward = 0.0
-
-        # sparse completion reward
-        if self._check_success():
-            reward = 10
-
-        # reaching reward
-        dist = self._gripper_to_target(
-            gripper=self.robots[0].gripper,
-            target=self.cube.root_body,
-            target_type="body",
-            return_distance=True,
-        )
-        dist_change = self.prev_dist - dist
-        self.prev_dist = dist
-        reward += dist_change * 50
-
-        # grasping reward
-        if self._check_grasp(gripper=self.robots[0].gripper, object_geoms=self.cube):
-            reward += 2
-
-        return reward
-
-    def _get_observations(self, force_update=False):
-        """
-        Grabs observations from the environment.
-        Args:
-            force_update (bool): If True, will force all the observables to update their internal values to the newest
-                value. This is useful if, e.g., you want to grab observations when directly setting simulation states
-                without actually stepping the simulation.
-        Returns:
-            OrderedDict: OrderedDict containing observations [(name_string, np.array), ...]
-        """
-        observations = OrderedDict()
-        obs_by_modality = OrderedDict()
-
-        # Force an update if requested
-        if force_update:
-            self._update_observables(force=True)
-
-        # Loop through all observables and grab their current observation
-        for obs_name, observable in self._observables.items():
-            if observable.is_enabled() and observable.is_active():
-                obs = observable.obs
-                observations[obs_name] = obs
-                modality = observable.modality + "-state"
-                if modality not in obs_by_modality:
-                    obs_by_modality[modality] = []
-                # Make sure all observations are numpy arrays so we can concatenate them
-                array_obs = [obs] if type(obs) in {int, float} or not obs.shape else obs
-                obs_by_modality[modality].append(np.array(array_obs))
-
-        # Add in modality observations
-        for modality, obs in obs_by_modality.items():
-            # To save memory, we only concatenate the image observations if explicitly requested
-            if modality == "image-state" and not macros.CONCATENATE_IMAGES:
-                continue
-            observations[modality] = np.concatenate(obs, axis=-1)
-
-        imageio.imwrite(
-            f"/Users/yhong3/Documents/Notes/Notes/Courses/16-886 Embodied AI Safety/project/EAIS/code/img/debug/test.png",
-            observations["agentview_image"],
-        )
-        return observations
-
-
-def train_diffusion_policy():
-    env = GymWrapper(
-        MyLift(
-            robots="Panda",
-            has_renderer=False,
-            use_camera_obs=True,
-            camera_names="agentview",
-            control_freq=20,
-            reward_shaping=True,
-        ),
-        flatten_obs=False,
-    )
-
-    model = DiffusionPolicy().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
-    scheduler = DDPMScheduler(num_train_timesteps=10)
-    transform = transforms.Compose(
-        [
-            transforms.ToPILImage(),
-            transforms.Resize((64, 64)),
-            transforms.ToTensor(),
-            transforms.Normalize([0.5] * 3, [0.5] * 3),
+class TrajectoryDataset(Dataset):
+    def __init__(self, num_samples=1000, steps_length=0.02, steps=64):
+        self.step_length = steps_length
+        self.obstacles = [
+            ((0.4, 0.4), 0.2, 0.2),
+            ((0.7, 0.1), 0.1, 0.3),
+            ((0.8, 0.6), 0.3, 0.1),
+            ((0.2, 0.7), 0.1, 0.4),
         ]
-    )
+        self.steps = steps
+        self.data = self._generate_data(num_samples)
 
-    replay_buffer = []
-    batch_size = 128
-    max_buffer_size = 10000
-    num_episodes = 100
+    def _is_colliding(self, point):
+        for (ox, oy), w, h in self.obstacles:
+            if ox <= point[0] <= ox + w and oy <= point[1] <= oy + h:
+                return True
+        return False
 
-    for ep in range(num_episodes):
-        obs = env.reset()[0]
-        total_reward = 0
-        done = False
-        step = 0
-        losses = []
-        frames = []
+    def _generate_random_point(self):
+        # random points that does not collide with obstacles
+        while True:
+            point = np.random.rand(2)
+            if not self._is_colliding(point):
+                return point
 
-        while not done:
-            step += 1
-            obs_img = obs["agentview_image"][:, :, ::-1]
-            img_tensor = transform(obs_img).unsqueeze(0).to(device)
-            frames.append(obs["agentview_image"][:, :, ::-1])
-            clipped_action = []
+    def _transform_traj(self, trajectory, steps):
+        # transform trajectory to a fixed number of steps, using linear interpolation
+        res = []
+        traj_len = len(trajectory)
+        for i in range(steps):
+            t = i / (steps - 1) * (traj_len - 1)
+            t0 = int(t)
+            t1 = min(t0 + 1, traj_len - 1)
+            alpha = t - t0
+            point = trajectory[t0] * (1 - alpha) + trajectory[t1] * alpha
+            res.append(point)
+        return np.array(res)
 
-            with torch.no_grad():
-                x_t = torch.randn((1, 7)).to(device)
+    def _generate_trajectory(self, start, goal):
+        path = [start]
+        current_point = start
+        prev_direction = (goal - start) / np.linalg.norm(goal - start)
+        while np.linalg.norm(current_point - goal) > self.step_length:
+            new_direction = (goal - current_point) / np.linalg.norm(
+                goal - current_point
+            )
+            direction = (prev_direction + new_direction) / np.linalg.norm(
+                prev_direction + new_direction
+            )
+            next_point = current_point + direction * self.step_length
+            if self._is_colliding(next_point):
+                # try different directions, from the closest to furthest
+                next_point = None
+                for base_angle in np.linspace(0, np.pi, 10):
+                    for angle in [-base_angle, base_angle]:
+                        rotated_direction = np.array(
+                            [
+                                direction[0] * np.cos(angle)
+                                - direction[1] * np.sin(angle),
+                                direction[0] * np.sin(angle)
+                                + direction[1] * np.cos(angle),
+                            ]
+                        )
+                        next_point_rotated = (
+                            current_point + rotated_direction * self.step_length
+                        )
+                        if not self._is_colliding(next_point_rotated):
+                            next_point = next_point_rotated
+                            break
+                    if next_point is not None:
+                        break
+                path.append(next_point)
+                current_point = next_point
+                prev_direction = rotated_direction
+            else:
+                path.append(next_point)
+                current_point = next_point
+                prev_direction = direction
+        path.append(goal)
+        path = self._transform_traj(path, self.steps)
+        path = np.array(path)
+        return path
 
-                for t in scheduler.timesteps:
-                    t_batch = torch.tensor([t], device=device, dtype=torch.long)
-                    pred_noise = model(x_t, img_tensor, t_batch)
-                    step_output = scheduler.step(pred_noise, t, x_t)
-                    x_t = step_output.prev_sample
+    def _generate_data(self, n):
+        data = []
+        for _ in range(n):
+            start = self._generate_random_point()
+            goal = self._generate_random_point()
+            path = self._generate_trajectory(start, goal)
+            data.append((start, goal, path))
+        return data
 
-                action = x_t  # Final denoised action
+    def __len__(self):
+        return len(self.data)
 
-                action_clipped = torch.tanh(action).squeeze().cpu().numpy()
-                clipped_action.append(action_clipped)
-                next_obs, reward, terminated, truncated, _ = env.step(action_clipped)
-                done = terminated or truncated
-                total_reward += reward
+    def __getitem__(self, idx):
+        start, goal, path = self.data[idx]
+        cond = np.concatenate([start, goal])
+        return torch.tensor(path, dtype=torch.float32), torch.tensor(
+            cond, dtype=torch.float32
+        )
 
-                # Store transition
-                replay_buffer.append((img_tensor, action.detach(), reward))
-                if len(replay_buffer) > max_buffer_size:
-                    replay_buffer.pop(0)
+    def visualize(self, idx):
+        start, goal, path = self.data[idx]
+        plt.figure(figsize=(5, 5))
+        plt.plot(path[:, 0], path[:, 1], "-o", label="Path")
+        for (ox, oy), w, h in self.obstacles:
+            plt.gca().add_patch(plt.Rectangle((ox, oy), w, h, color="gray"))
+        plt.scatter(*start, c="green", s=100, label="Start")
+        plt.scatter(*goal, c="red", s=100, label="Goal")
+        plt.legend()
+        plt.xlim(0, 1)
+        plt.ylim(0, 1)
+        plt.grid(True)
+        plt.show()
 
-            # Train from random batch
-            if len(replay_buffer) >= batch_size:
-                batch = random.sample(replay_buffer, batch_size)
-                imgs, actions, rewards = zip(*batch)
-                imgs = torch.cat(imgs)
-                actions = torch.stack(actions).reshape(batch_size, -1).to(device)
-                rewards = torch.tensor(
-                    rewards, device=device, dtype=torch.float32
-                ).unsqueeze(1)
-                # rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-5)
 
-                t = torch.randint(
+class TrajectoryModel(nn.Module):
+    def __init__(self, d_model=128, nhead=4, num_layers=4):
+        super().__init__()
+        self.d_model = d_model
+
+        # Project (x, y) + condition vector to d_model
+        self.input_proj = nn.Linear(2 + 4, d_model)
+
+        # Positional encoding
+        self.pos_encoding = nn.Parameter(torch.randn(1, 64, d_model))  # 64 steps
+
+        # Transformer
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=nhead, batch_first=True
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+        # Output head: project back to 2D noise
+        self.output_proj = nn.Linear(d_model, 2)
+
+    def forward(self, sample, timestep, class_labels):
+        """
+        sample: [B, S, 2]
+        class_labels: [B, 4] (start+goal)
+        """
+        B, S, _ = sample.shape
+        cond = class_labels.unsqueeze(1).expand(-1, S, -1)  # [B, S, 4]
+        x = torch.cat([sample, cond], dim=-1)  # [B, S, 6]
+        x = self.input_proj(x) + self.pos_encoding[:, :S]  # [B, S, d_model]
+        x = self.transformer(x)  # [B, S, d_model]
+        out = self.output_proj(x)  # [B, S, 2]
+        return out
+
+
+class TrajectoryTrainer:
+    def __init__(self, model, dataset, batch_size=128, device=None):
+        self.model = model
+        self.dataset = dataset
+        self.dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        self.scheduler = DDPMScheduler(num_train_timesteps=100)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
+        self.device = device or torch.device(
+            "mps"
+            if torch.backends.mps.is_available()
+            else "cuda" if torch.cuda.is_available() else "cpu"
+        )
+        self.model.to(self.device)
+
+    def train(self, epochs=100):
+        loss_tracker = []
+        for epoch in range(epochs):
+            losses = []
+            for traj, cond in tqdm(self.dataloader, desc=f"Epoch {epoch}"):
+                traj = traj.to(self.device)
+                cond = cond.to(self.device)
+                noise = torch.randn_like(traj)
+                timesteps = torch.randint(
                     0,
-                    scheduler.config.num_train_timesteps,
-                    (batch_size,),
-                    device=device,
-                )
-                noise = torch.randn_like(actions)
-                noisy_actions = scheduler.add_noise(actions, noise, t)
+                    self.scheduler.config.num_train_timesteps,
+                    (traj.size(0),),
+                    device=self.device,
+                ).long()
 
-                pred_noise = model(noisy_actions, imgs, t)
-                loss = F.mse_loss(pred_noise, noise, reduction="none").mean(dim=1)
-                loss = (loss * (torch.clamp(rewards, min=0.0) + 1)).mean()
-                # loss = loss.mean()
+                noisy = self.scheduler.add_noise(traj, noise, timesteps)
+                pred = self.model(noisy, timesteps, cond)
+
+                loss = nn.functional.mse_loss(pred, noise)
+
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
                 losses.append(loss.item())
 
-                optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
+            print(f"Epoch {epoch} - Loss: {np.mean(losses):.4f}")
+            loss_tracker.append(np.mean(losses))
+            # save model
+            if epoch % 10 == 0:
+                save_model(self.model, f"trajectory_model_epoch_{epoch}.pth")
+        # draw loss curve
+        plt.plot(loss_tracker)
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.title("Training Loss")
+        plt.show()
+        return loss_tracker
 
-            obs = next_obs
 
-        logger.info(
-            f"[Episode {ep+1}] Total Reward: {total_reward:.2f}, Loss: {sum(losses)/len(losses):.4f}, Total Steps: {step}, Mean Action: {np.mean(clipped_action):.4f}, Std Action: {np.std(clipped_action):.4f}"
+class TrajectorySampler:
+    def __init__(self, model, scheduler, steps=64, device=None):
+        self.model = model
+        self.scheduler = scheduler
+        self.steps = steps
+        self.device = device or torch.device(
+            "mps"
+            if torch.backends.mps.is_available()
+            else "cuda" if torch.cuda.is_available() else "cpu"
         )
-        if ep % 10 == 0:
-            imageio.mimsave(f"img/episode_{ep+1:03d}.gif", frames, fps=100)
+
+    def sample(self, start, goal):
+        self.model.eval()
+        x_list = []
+        x = torch.randn(1, self.steps, 2).to(self.device)
+        x_list.append(x.squeeze(0).cpu().numpy())
+        cond = (
+            torch.tensor(np.concatenate([start, goal]), dtype=torch.float32)
+            .unsqueeze(0)
+            .to(self.device)
+        )
+
+        for t in reversed(range(self.scheduler.config.num_train_timesteps)):
+            timesteps = torch.tensor([t], device=self.device)
+            with torch.no_grad():
+                noise_pred = self.model(x, timesteps, cond)
+
+            x = self.scheduler.step(noise_pred, timesteps, x).prev_sample
+            x_list.append(x.squeeze(0).cpu().numpy())
+
+        return x.squeeze(0).cpu().numpy(), x_list
+
+
+class Visualizer:
+    @staticmethod
+    def plot(path, start, goal, obstacles):
+        plt.figure(figsize=(5, 5))
+        plt.plot(path[:, 0], path[:, 1], "-o", label="Path")
+        plt.scatter(*start, c="green", label="Start")
+        plt.scatter(*goal, c="red", label="Goal")
+        for (ox, oy), w, h in obstacles:
+            plt.gca().add_patch(plt.Rectangle((ox, oy), w, h, color="gray"))
+        plt.legend()
+        plt.xlim(0, 1)
+        plt.ylim(0, 1)
+        plt.grid(True)
+        plt.show()
+        
+    @staticmethod
+    def plot_list(path_list, start, goal, obstacles):
+        # generate a gif
+        images = []
+        for i, path in enumerate(path_list):
+            plt.figure(figsize=(5, 5))
+            plt.plot(path[:, 0], path[:, 1], "-o", label="Path")
+            plt.scatter(*start, c="green", label="Start")
+            plt.scatter(*goal, c="red", label="Goal")
+            for (ox, oy), w, h in obstacles:
+                plt.gca().add_patch(plt.Rectangle((ox, oy), w, h, color="gray"))
+            plt.legend()
+            plt.xlim(0, 1)
+            plt.ylim(0, 1)
+            plt.grid(True)
+            plt.savefig(f"img/frame_{i}.png")
+            images.append(imageio.imread(f"img/frame_{i}.png"))
+        imageio.mimsave("trajectory.gif", images, fps=10)
+        print("GIF saved as trajectory.gif")
+
+
+def save_model(model, path):
+    torch.save(model.state_dict(), path)
+    print(f"Model saved to {path}")
+
+
+def load_model(model, path):
+    model.load_state_dict(torch.load(path))
+    device = torch.device(
+        "mps"
+        if torch.backends.mps.is_available()
+        else "cuda" if torch.cuda.is_available() else "cpu"
+    )
+    model.to(device)
+    print(f"Model loaded from {path}, device: {device}")
+    return model
+
+
+def train():
+    print("Generating dataset...")
+    dataset = TrajectoryDataset(num_samples=102400)
+    print(f"Dataset size: {len(dataset)}")
+    model = TrajectoryModel()
+    trainer = TrajectoryTrainer(model, dataset, batch_size=256)
+    trainer.train(epochs=100)
+
+    sampler = TrajectorySampler(model, trainer.scheduler)
+    start = np.array([0.05, 0.1])
+    goal = np.array([0.95, 0.9])
+    sampled_path, sample_path_list = sampler.sample(start, goal)
+
+    Visualizer.plot(sampled_path, start, goal, dataset.obstacles)
+
+    save_model(model, "trajectory_model.pth")
+
+
+def sample():
+    device = torch.device(
+        "mps"
+        if torch.backends.mps.is_available()
+        else "cuda" if torch.cuda.is_available() else "cpu"
+    )
+
+    dataset = TrajectoryDataset(num_samples=1)
+    model = TrajectoryModel()
+    model = load_model(model, "trajectory_model.pth")
+    scheduler = DDPMScheduler(num_train_timesteps=100)
+    scheduler.alphas_cumprod = scheduler.alphas_cumprod.to(device)
+    sampler = TrajectorySampler(model, scheduler)
+    start = np.array([0.05, 0.1])
+    goal = np.array([0.95, 0.9])
+    sampled_path, sample_path_list = sampler.sample(start, goal)
+    # Visualizer.plot(sampled_path, start, goal, dataset.obstacles)
+    Visualizer.plot_list(sample_path_list, start, goal, dataset.obstacles)
 
 
 if __name__ == "__main__":
-    train_diffusion_policy()
+    # train()
+    sample()
